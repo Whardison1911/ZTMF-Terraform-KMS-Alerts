@@ -3,15 +3,15 @@
 # Purpose: Detect KMS PutKeyPolicy events via CloudTrail Logs and raise an alarm.
 # Owner: ZTMF (CMS)
 # Notes:
-#   - CloudTrail Log Group must be "cms-cloud-cloudtrail-logs"
-#   - Creates a metric filter and an alarm that publishes to an SNS topic.
+#   - Update locals.tf to match your CloudTrail log group name
+#   - SNS topic is defined in shared_resources.tf
 #   - Last updated: 2025-08-13
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_metric_filter" "key_policy_change" {
   name           = "kms_key_policy_change"
-  log_group_name = "cms-cloud-cloudtrail-logs"
-  pattern        = "{ ($.eventSource = \"kms.amazonaws.com\") && ($.eventName = \"PutKeyPolicy\") }"PutKeyPolicy\""
+  log_group_name = local.cloudtrail_log_group
+  pattern        = "{ ($.eventSource = \"kms.amazonaws.com\") && ($.eventName = \"PutKeyPolicy\") }"
   metric_transformation {
     name      = "KeyPolicyChanged"
     namespace = "KMSMonitoring"
@@ -19,25 +19,24 @@ resource "aws_cloudwatch_log_metric_filter" "key_policy_change" {
   }
 }
 resource "aws_cloudwatch_metric_alarm" "key_policy_change_alarm" {
-  alarm_name          = "KMSKeyPolicyChanged"
+  alarm_name          = "${local.org_prefix}-KMSKeyPolicyChanged"
   alarm_description   = "Triggers when a KMS key policy is changed."
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = local.alarm_evaluation_periods
   metric_name         = "KeyPolicyChanged"
   namespace           = "KMSMonitoring"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 1
-  treat_missing_data  = "notBreaching"
+  period              = local.alarm_period
+  statistic           = local.alarm_statistic
+  threshold           = local.alarm_threshold
+  treat_missing_data  = local.alarm_treat_missing_data
   alarm_actions       = [aws_sns_topic.kms_alerts.arn]
-}
-resource "aws_sns_topic" "kms_alerts" {
-  name = "kms-alert-topic"
-}
-resource "aws_sns_topic_subscription" "email_sub" {
-  topic_arn = aws_sns_topic.kms_alerts.arn
-  protocol  = "email"
-  endpoint  = "your-email@example.com"
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${local.org_prefix}-KMSKeyPolicyChanged"
+    }
+  )
 }
 
 

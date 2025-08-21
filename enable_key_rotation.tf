@@ -6,17 +6,11 @@
 # Notes:
 #   - Package `index.py` into `lambda_function_payload.zip` at the ZIP root.
 #   - Handler must be `index.lambda_handler`.
-#   - IAM role/policy follows: ct-[ADO_name]-[policy_name]
-#   - Last updated: 2025-08-13
-#
-# IMPORTANT:
-# Be sure your Lambda’s role/policy (named ct-ADOName-kms-lambda-exec / ct-ADOName-kms-lambda-policy) includes:
-#   - kms:EnableKeyRotation
-#   - CloudWatch Logs (logs:* basic logging)
+#   - Update locals.tf with your organization's naming conventions
 # -----------------------------------------------------------------------------
 
-resource "aws_iam_role" "ct_ADO_kms_lambda_exec" {
-  name = "ct-ADOName-kms-lambda-exec"
+resource "aws_iam_role" "kms_rotation_lambda_exec" {
+  name = "${local.iam_role_prefix}-kms-rotation-lambda"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -31,8 +25,8 @@ resource "aws_iam_role" "ct_ADO_kms_lambda_exec" {
   })
 }
 
-resource "aws_iam_policy" "ct_ADO_kms_lambda_policy" {
-  name        = "ct-ADOName-kms-lambda-policy"
+resource "aws_iam_policy" "kms_rotation_lambda_policy" {
+  name        = "${local.iam_policy_prefix}-kms-rotation-lambda"
   description = "Allows Lambda to enable KMS key rotation and write logs."
   policy = jsonencode({
     Version = "2012-10-17"
@@ -57,20 +51,27 @@ resource "aws_iam_policy" "ct_ADO_kms_lambda_policy" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "kms_lambda_attach" {
-  role       = aws_iam_role.ct_ADO_kms_lambda_exec.name
-  policy_arn = aws_iam_policy.ct_ADO_kms_lambda_policy.arn
+resource "aws_iam_role_policy_attachment" "kms_rotation_lambda_attach" {
+  role       = aws_iam_role.kms_rotation_lambda_exec.name
+  policy_arn = aws_iam_policy.kms_rotation_lambda_policy.arn
 }
 
 resource "aws_lambda_function" "enable_kms_rotation" {
-  function_name    = "EnableKMSKeyRotation"
+  function_name    = "${local.org_prefix}-EnableKMSKeyRotation"
   description      = "Remediation Lambda to enable KMS key rotation (invoked by AWS Config)"
-  role             = aws_iam_role.ct_ADO_kms_lambda_exec.arn
-  runtime          = "python3.12"
+  role             = aws_iam_role.kms_rotation_lambda_exec.arn
+  runtime          = local.lambda_runtime
   handler          = "index.lambda_handler"
-  timeout          = 60
+  timeout          = local.lambda_timeout
   filename         = "lambda_function_payload.zip"
   source_code_hash = filebase64sha256("lambda_function_payload.zip")
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${local.org_prefix}-EnableKMSKeyRotation"
+    }
+  )
 }
 
 # Allow AWS Config to invoke the remediation Lambda
